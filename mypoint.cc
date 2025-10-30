@@ -22,11 +22,11 @@ int main (int argc, char *argv[])
   uint32_t maxPkts = 6;
   double simTime = 11.0;
 
-  // Dimiourgia kombwn
+  // Creating 2  nodes
   NodeContainer nodes;
   nodes.Create(2); // Node 0 -> Clients, Node 1 -> Servers
 
-  //Point-to-Point syndesi 
+  //Point-to-Point connection 
   PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue(dataRate));
   p2p.SetChannelAttribute("Delay", StringValue(delay));
@@ -41,7 +41,7 @@ int main (int argc, char *argv[])
   Ipv4InterfaceContainer ifaces = address.Assign(devices);
   Ipv4Address serverAddr = ifaces.GetAddress(1);
 
-  //2 UDP Echo Servers ston komvo 1
+  //2 UDP Echo Servers for node 1
   uint16_t port1 = 9, port2 = 10;
   UdpEchoServerHelper server1(port1);
   UdpEchoServerHelper server2(port2);
@@ -50,7 +50,7 @@ int main (int argc, char *argv[])
   s1.Start(Seconds(0.5)); s1.Stop(Seconds(simTime - 1.0));
   s2.Start(Seconds(0.5)); s2.Stop(Seconds(simTime - 1.0));
 
-  // --- 2 UDP Echo Clients ston komvo 0 ---
+  // --- 2 UDP Echo Clients for node 0 ---
   UdpEchoClientHelper client1(serverAddr, port1);
   client1.SetAttribute("MaxPackets", UintegerValue(maxPkts));
   client1.SetAttribute("Interval", TimeValue(Seconds(1.0)));
@@ -78,7 +78,7 @@ int main (int argc, char *argv[])
   Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier>(fmHelper.GetClassifier());
   std::map<FlowId, FlowMonitor::FlowStats> stats = monitor->GetFlowStats();
 
-  std::cout << "\nAPOTELESMATA ROON \n";
+  std::cout << "\nResults of Flows \n";
 
   for (const auto &kv : stats)
   {
@@ -90,15 +90,15 @@ int main (int argc, char *argv[])
     double throughputMbps = (duration > 0) ? (st.rxBytes * 8.0 / duration) / 1e6 : 0.0;
     double meanDelayMs = (st.rxPackets > 0) ? (st.delaySum.GetSeconds() / st.rxPackets) * 1000.0 : 0.0;
 
-    std::cout << "\nRoi ID: " << id << "\n";
-    std::cout << "Apo: " << t.sourceAddress << ":" << t.sourcePort
-              << "  ->  Pros: " << t.destinationAddress << ":" << t.destinationPort << "\n";
+    std::cout << "\nID of Flow: " << id << "\n";
+    std::cout << "From : " << t.sourceAddress << ":" << t.sourcePort
+              << "  ->  To: " << t.destinationAddress << ":" << t.destinationPort << "\n";
 
-    std::cout << "  Paketa pou stalikan: " << st.txPackets << "\n";
-    std::cout << "  Paketa pou elifthikan: " << st.rxPackets << "\n";
-    std::cout << "  Paketa pou xathikan: " << st.lostPackets << "\n";
-    std::cout << "  Mesi kathysterisi: " << meanDelayMs << " ms\n";
-    std::cout << "  Evros zwnis : " << throughputMbps << " Mbps\n";
+    std::cout << "  Packets Send: " << st.txPackets << "\n";
+    std::cout << "  Packets Received: " << st.rxPackets << "\n";
+    std::cout << "  Packets Lost: " << st.lostPackets << "\n";
+    std::cout << "  Average Delay: " << meanDelayMs << " ms\n";
+    std::cout << "  Bandwidth: " << throughputMbps << " Mbps\n";
   }
 
  
