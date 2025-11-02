@@ -18,7 +18,7 @@ int main (int argc, char *argv[])
 
   std::string dataRate = "5Mbps";
   std::string delay = "6ms";
-  uint32_t pktSize = 1024;
+  uint32_t pktSize = 1024; //Unsigned 32 bit Intiger
   uint32_t maxPkts = 6;
   double simTime = 11.0;
 
@@ -41,7 +41,7 @@ int main (int argc, char *argv[])
   Ipv4InterfaceContainer ifaces = address.Assign(devices);
   Ipv4Address serverAddr = ifaces.GetAddress(1);
 
-  //2 UDP Echo Servers for node 1
+  // (x2) UDP Echo Servers for node 1
   uint16_t port1 = 9, port2 = 10;
   UdpEchoServerHelper server1(port1);
   UdpEchoServerHelper server2(port2);
@@ -50,7 +50,7 @@ int main (int argc, char *argv[])
   s1.Start(Seconds(0.5)); s1.Stop(Seconds(simTime - 1.0));
   s2.Start(Seconds(0.5)); s2.Stop(Seconds(simTime - 1.0));
 
-  // --- 2 UDP Echo Clients for node 0 ---
+  // (x2) UDP Echo Clients for node 0 
   UdpEchoClientHelper client1(serverAddr, port1);
   client1.SetAttribute("MaxPackets", UintegerValue(maxPkts));
   client1.SetAttribute("Interval", TimeValue(Seconds(1.0)));
@@ -66,7 +66,7 @@ int main (int argc, char *argv[])
   c1.Start(Seconds(1.0));  c1.Stop(Seconds(simTime - 2.0));
   c2.Start(Seconds(1.5));  c2.Stop(Seconds(simTime - 1.5));
 
-  //FlowMonitor
+  //FlowMonitor to monitor trafic
   FlowMonitorHelper fmHelper;
   Ptr<FlowMonitor> monitor = fmHelper.InstallAll();
 
@@ -105,3 +105,4 @@ int main (int argc, char *argv[])
   Simulator::Destroy();
   return 0;
 }
+
