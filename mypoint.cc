@@ -87,7 +87,8 @@ int main (int argc, char *argv[])
     Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow(id);
 
     double duration = (st.timeLastRxPacket - st.timeFirstTxPacket).GetSeconds();
-    double throughputMbps = (duration > 0) ? (st.rxBytes * 8.0 / duration) / 1e6 : 0.0;
+    double throughputMbps = (duration > 0) ? (st.rxBytes * 8.0 / duration) / 1e6 : 0.0; //Converts Bytes -> Bits 
+                                                                                    //and makes duration Bit per sec -> Megabit per sec
     double meanDelayMs = (st.rxPackets > 0) ? (st.delaySum.GetSeconds() / st.rxPackets) * 1000.0 : 0.0;
 
     std::cout << "\nID of Flow: " << id << "\n";
@@ -105,4 +106,5 @@ int main (int argc, char *argv[])
   Simulator::Destroy();
   return 0;
 }
+
 
