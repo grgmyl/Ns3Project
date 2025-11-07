@@ -1,40 +1,34 @@
-// fine-node-topology.cc
-
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/applications-module.h"
+#include "ns3/flow-monitor-module.h"
 
 using namespace ns3;
 
 int main (int argc, char *argv[])
 {
-  // 1) Παράμετρος καθυστέρησης
+  // parametroi via cmd
   std::string delay = "2ms";
+  double failDownAt = 2.0;
+  double failUpAt   = 3.0;
+
   CommandLine cmd;
-  cmd.AddValue("delay", "Καθυστέρηση για όλα τα links (π.χ. 1ms, 5ms, 10ms)", delay);
+  cmd.AddValue("delay", "Link delay (e.g., 1ms, 5ms, 10ms)", delay);
+  cmd.AddValue("failDownAt", "Time (s) link 0-1 goes DOWN", failDownAt); //epireazei POTE to link 0-1 katevainei
+  cmd.AddValue("failUpAt",   "Time (s) link 0-1 goes UP",   failUpAt);//epireazei POTE to link 0-1 anevainei
   cmd.Parse(argc, argv);
 
-  //  Εκτύπωση για επιβεβαίωση
-  std::cout << "-------------------------------" << std::endl;
-  std::cout << "Καθυστέρηση links: " << delay << std::endl;
-  std::cout << "-------------------------------" << std::endl;
+  // nodes
+  NodeContainer nodes; nodes.Create(5); // 0..4
+  InternetStackHelper stack; stack.Install(nodes);
 
-  // 2) Κόμβοι
-  NodeContainer nodes;
-  nodes.Create(5); // 0..4
-
-  // 3) Internet stack
-  InternetStackHelper stack;
-  stack.Install(nodes);
-
-  // 4) Point-to-point links
+  // links
   PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
-  p2p.SetChannelAttribute("Delay", StringValue(delay));
+  p2p.SetChannelAttribute("Delay",   StringValue(delay));
 
-  // 5) Συνδέσεις
   NodeContainer n01(nodes.Get(0), nodes.Get(1));
   NodeContainer n12(nodes.Get(1), nodes.Get(2));
   NodeContainer n03(nodes.Get(0), nodes.Get(3));
@@ -47,106 +41,135 @@ int main (int argc, char *argv[])
   NetDeviceContainer d34 = p2p.Install(n34);
   NetDeviceContainer d42 = p2p.Install(n42);
 
-  // 6) IP διευθύνσεις
+  // addressing
   Ipv4AddressHelper address;
   address.SetBase("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer i01 = address.Assign(d01);
-
   address.SetBase("10.1.2.0", "255.255.255.0");
   Ipv4InterfaceContainer i12 = address.Assign(d12);
-
   address.SetBase("10.1.3.0", "255.255.255.0");
   Ipv4InterfaceContainer i03 = address.Assign(d03);
-
   address.SetBase("10.1.4.0", "255.255.255.0");
   Ipv4InterfaceContainer i34 = address.Assign(d34);
-
   address.SetBase("10.1.5.0", "255.255.255.0");
   Ipv4InterfaceContainer i42 = address.Assign(d42);
 
-  // 7) Δρομολόγηση
+  // routes
   Ipv4GlobalRoutingHelper::PopulateRoutingTables();
 
-  // 8) UDP Echo: server στον Node 2, client στον Node 0
-  uint16_t port = 9;
+  // UDP Echo: server on node 2, client on node 0
+int port = 9;
   UdpEchoServerHelper echoServer(port);
-  ApplicationContainer serverApps = echoServer.Install(nodes.Get(2));
+  auto serverApps = echoServer.Install(nodes.Get(2));
   serverApps.Start(Seconds(0.5));
   serverApps.Stop(Seconds(10.0));
 
-  Ipv4Address dst = i12.GetAddress(1); // IP του Node2 στο link 1–2
-  UdpEchoClientHelper echoClient(dst, port);
-  echoClient.SetAttribute("MaxPackets", UintegerValue(10));
-  echoClient.SetAttribute("Interval", TimeValue(Seconds(1.0)));
-  echoClient.SetAttribute("PacketSize", UintegerValue(64));
-
-  ApplicationContainer clientApps = echoClient.Install(nodes.Get(0));
+  UdpEchoClientHelper echoClient(i12.GetAddress(1), port); // node2 addr on 1–2
+  echoClient.SetAttribute("MaxPackets", UintegerValue(0));        
+  echoClient.SetAttribute("Interval",   TimeValue(Seconds(0.02))); 
+  echoClient.SetAttribute("PacketSize", UintegerValue(128));
+  auto clientApps = echoClient.Install(nodes.Get(0));
   clientApps.Start(Seconds(1.0));
   clientApps.Stop(Seconds(10.0));
 
-    // 9) PCAP για ανάλυση
-  p2p.EnablePcapAll("five-node-topology");
+  // link failure (0–1) 
+  Ptr<NetDevice> dev0 = d01.Get(0);
+  Ptr<NetDevice> dev1 = d01.Get(1);
+  Ptr<Ipv4> ipv4Node0 = nodes.Get(0)->GetObject<Ipv4>();
+  Ptr<Ipv4> ipv4Node1 = nodes.Get(1)->GetObject<Ipv4>();
+  int ifIndex0 = ipv4Node0->GetInterfaceForDevice(dev0);
+  int ifIndex1 = ipv4Node1->GetInterfaceForDevice(dev1);
+  
+//safety check se periptosi pou den anatethei kapoio ip/kanw point se kapoio lathos netdevice
+  if (ifIndex0 == -1 || ifIndex1 == -1) {
+    std::cerr << "ERROR: interface index not found for Node0/Node1\n";
+  } else {
+    Simulator::Schedule(Seconds(failDownAt), &Ipv4::SetDown, ipv4Node0, (int)ifIndex0);
+    Simulator::Schedule(Seconds(failDownAt), &Ipv4::SetDown, ipv4Node1, (int)ifIndex1);
+    Simulator::Schedule(Seconds(failDownAt + 0.01), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
 
-  // 10) Συμβάντα αποτυχίας και επαναφοράς σύνδεσης (Node0–Node1)
-// --- Prepare to bring link 0-1 down and up at specific times ---
+    Simulator::Schedule(Seconds(failUpAt), &Ipv4::SetUp, ipv4Node0, (int)ifIndex0);
+    Simulator::Schedule(Seconds(failUpAt), &Ipv4::SetUp, ipv4Node1, (int)ifIndex1);
+    Simulator::Schedule(Seconds(failUpAt + 0.01), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
+  }
 
-// Get the two NetDevices on the 0-1 link
-//Ptr<NetDevice> dev0 = d01.Get(0); // device on Node0
-//Ptr<NetDevice> dev1 = d01.Get(1); // device on Node1
-////////////////////////////////////////////////////////
+  // FlowMonitor
+  FlowMonitorHelper flowmon;
+  Ptr<FlowMonitor> monitor = flowmon.InstallAll();
+
+  //snapshot function: prints throughput / PDR / avg delay since last snapshot
+  struct Acc { int tx=0, rx=0, lost=0, rxBytes=0; double delay=0; double t=0; } last;
+
+  auto Snapshot = [&](const char* label){
+    monitor->CheckForLostPackets();
+    const auto &stats = monitor->GetFlowStats();
+
+    int tx=0, rx=0, lost=0, rxB=0; double dsum=0;
+    for (const auto &kv: stats) {
+      const auto &s = kv.second;
+      tx   += s.txPackets;
+      rx   += s.rxPackets;
+      lost += s.lostPackets;
+      rxB  += s.rxBytes;
+      dsum += s.delaySum.GetSeconds();
+    }
+
+    double now = Simulator::Now().GetSeconds();
+    double dt  = std::max(1e-9, now - last.t);
+
+    int dTx = tx - last.tx;
+    int dRx = rx - last.rx;
+    int dLost = lost - last.lost;
+    int dRxB = rxB - last.rxBytes;
+    double dDelay = dsum - last.delay;
+
+    double thrMbps = (dRxB * 8.0) / (dt * 1e6);
+    double pdrPct  = (dTx > 0) ? (100.0 * (double)dRx / (double)dTx) : 0.0;
+    double avgMs   = (dRx > 0) ? (dDelay / (double)dRx) * 1000.0 : 0.0;
+
+   std::cout.setf(std::ios::fixed);
+   std::cout.precision(3);
+   std::cout << now << "s (" << label << ")\n"
+          << "   Throughput: " << thrMbps << " Mbps\n"
+          << "   Packet Delivery Ratio: " << pdrPct << " %\n"
+          << "   Average Delay: " << avgMs << " ms\n"
+          << "   Packets Sent: " << dTx
+          << ", Received: " << dRx
+          << ", Lost: " << dLost << "\n"
+          << "----------------------------------------\n";
 
 
+    last = {tx, rx, lost, rxB, dsum, now};
+  };
 
-// Get the Ipv4 objects for node 0 and node 1
-Ptr<Ipv4> ipv4Node0 = nodes.Get(0)->GetObject<Ipv4>();
-Ptr<Ipv4> ipv4Node1 = nodes.Get(1)->GetObject<Ipv4>();
+  // Rerouting detection
+  AsciiTraceHelper ascii;
+  Ptr<OutputStreamWrapper> rt = ascii.CreateFileStream("routing-tables.txt");
+  Ipv4GlobalRoutingHelper gr;
 
-// Find the interface index corresponding to each NetDevice
-int32_t ifIndex0 = ipv4Node0->GetInterfaceForDevice(dev0);
-int32_t ifIndex1 = ipv4Node1->GetInterfaceForDevice(dev1);
-
-// Safety check: ensure interface indices were found
-if (ifIndex0 == -1 || ifIndex1 == -1) {
-  std::cerr << "ERROR: Could not find interface index for device on Node0 or Node1" << std::endl;
-} else {
-  // Schedule interface down at t = 2.0 s
-  Simulator::Schedule(Seconds(2.0), &Ipv4::SetDown, ipv4Node0, (uint32_t) ifIndex0);
-  Simulator::Schedule(Seconds(2.0), &Ipv4::SetDown, ipv4Node1, (uint32_t) ifIndex1);
-
-  // Optional: print when link goes down
-  Simulator::Schedule(Seconds(2.0), [](){
-    std::cout << "*** Link 0–1 DOWN at t=" << Simulator::Now().GetSeconds() << "s ***" << std::endl;
+  // schedule snapshots:prin,kata tin diarkeia kai meta tin apotixia
+  Simulator::Schedule(Seconds(std::max(1.0, failDownAt - 0.2)), [=,&Snapshot](){
+    gr.PrintRoutingTableAllAt(Seconds(Simulator::Now().GetSeconds()), rt);
+    Snapshot("pre-failure");
+  });
+  Simulator::Schedule(Seconds(failDownAt + 0.4), [=,&Snapshot](){
+    gr.PrintRoutingTableAllAt(Seconds(Simulator::Now().GetSeconds()), rt);
+    Snapshot("during-failure");
+  });
+  Simulator::Schedule(Seconds(failUpAt + 0.4), [=,&Snapshot](){
+    gr.PrintRoutingTableAllAt(Seconds(Simulator::Now().GetSeconds()), rt);
+    Snapshot("post-recovery");
   });
 
-  // Recompute global routing shortly after bringing interface down so routes adapt
-  Simulator::Schedule(Seconds(2.01), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
-
-  // Schedule interface up at t = 3.0 s
-  Simulator::Schedule(Seconds(3.0), &Ipv4::SetUp, ipv4Node0, (uint32_t) ifIndex0);
-  Simulator::Schedule(Seconds(3.0), &Ipv4::SetUp, ipv4Node1, (uint32_t) ifIndex1);
-
-  // Optional: print when link goes up
-  Simulator::Schedule(Seconds(3.0), [](){
-    std::cout << "*** Link 0–1 UP at t=" << Simulator::Now().GetSeconds() << "s ***" << std::endl;
-  });
-
-  // Recompute routing again after restoration
-  Simulator::Schedule(Seconds(3.01), &Ipv4GlobalRoutingHelper::PopulateRoutingTables);
-}
-////////////////////////////////
-
-
-
-  // Προαιρετικά: μηνύματα στο terminal
-  Simulator::Schedule(Seconds(2.0), [](){
-    std::cout << "*** Link 0–1 DOWN ***" << std::endl;
-  });
-  Simulator::Schedule(Seconds(3.0), [](){
-    std::cout << "*** Link 0–1 UP ***" << std::endl;
-  });
-
+  // run
   Simulator::Stop(Seconds(10.0));
   Simulator::Run();
+
   Simulator::Destroy();
   return 0;
 }
+
+
+
+
+
