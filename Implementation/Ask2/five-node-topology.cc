@@ -142,24 +142,16 @@ int port = 9;
     last = {tx, rx, lost, rxB, dsum, now};
   };
 
-  // Rerouting detection
-  AsciiTraceHelper ascii;
-  Ptr<OutputStreamWrapper> rt = ascii.CreateFileStream("routing-tables.txt");
-  Ipv4GlobalRoutingHelper gr;
-
   // schedule snapshots:prin,kata tin diarkeia kai meta tin apotixia
   Simulator::Schedule(Seconds(std::max(1.0, failDownAt - 0.2)), [=,&Snapshot](){
-    gr.PrintRoutingTableAllAt(Seconds(Simulator::Now().GetSeconds()), rt);
-    Snapshot("pre-failure");
-  });
-  Simulator::Schedule(Seconds(failDownAt + 0.4), [=,&Snapshot](){
-    gr.PrintRoutingTableAllAt(Seconds(Simulator::Now().GetSeconds()), rt);
-    Snapshot("during-failure");
-  });
-  Simulator::Schedule(Seconds(failUpAt + 0.4), [=,&Snapshot](){
-    gr.PrintRoutingTableAllAt(Seconds(Simulator::Now().GetSeconds()), rt);
-    Snapshot("post-recovery");
-  });
+  Snapshot("pre-failure");
+});
+Simulator::Schedule(Seconds(failDownAt + 0.4), [=,&Snapshot](){
+  Snapshot("during-failure");
+});
+Simulator::Schedule(Seconds(failUpAt + 0.4), [=,&Snapshot](){
+  Snapshot("post-recovery");
+});
 
   // run
   Simulator::Stop(Seconds(10.0));
