@@ -1,0 +1,147 @@
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/flow-monitor-module.h"
+#include "ns3/olsr-helper.h"
+#include "ns3/ipv4-list-routing-helper.h"
+
+using namespace ns3;
+
+static void Snapshot(Ptr<FlowMonitor> monitor, const char* label, double sinceStartSec)
+{
+  monitor->CheckForLostPackets();
+  auto stats = monitor->GetFlowStats();
+
+  long long tx=0, rx=0, lost=0, rxBytes=0;
+  double delaySum=0.0;
+
+  for (const auto &kv : stats)
+  {
+    const FlowMonitor::FlowStats &st = kv.second;
+    tx      += st.txPackets;
+    rx      += st.rxPackets;
+    lost    += st.lostPackets;
+    rxBytes += st.rxBytes;
+    delaySum += st.delaySum.GetSeconds();
+  }
+
+  double thrMbps = (sinceStartSec > 0.0) ? (8.0 * (double)rxBytes / sinceStartSec / 1e6) : 0.0;
+  double pdrPct  = (tx > 0) ? (100.0 * (double)rx / (double)tx) : 0.0;
+  double avgMs   = (rx > 0) ? ((delaySum / (double)rx) * 1000.0) : 0.0;
+
+  std::cout.setf(std::ios::fixed);
+  std::cout.precision(3);
+  std::cout << Simulator::Now().GetSeconds() << "s (" << label << ")\n"
+            << "   Throughput: " << thrMbps << " Mbps\n"
+            << "   Packet Delivery Ratio: " << pdrPct << " %\n"
+            << "   Average Delay: " << avgMs << " ms\n"
+            << "   Packets Sent: " << tx
+            << ", Received: " << rx
+            << ", Lost: " << lost << "\n"
+            << "----------------------------------------\n";
+}
+
+int main (int argc, char *argv[])
+{
+  // link + queue
+  std::string linkRate = "3Mbps";
+  std::string delayStr = "30ms";
+  int qMaxPkts = 15;          // queue size in packets (DropTail MaxSize)
+
+  // traffic
+  int packetSize = 1200;      // bytes
+  double intervalSec = 0.0013;// seconds (≈7.4 Mbps offered > 3 Mbps)
+
+  // failure window
+  double failDownAt = 5.0;
+  double failUpAt   = 9.0;
+
+  // CLI
+  CommandLine cmd;
+  cmd.AddValue("rate",       "P2P rate", linkRate);
+  cmd.AddValue("delay",      "P2P delay per hop", delayStr);
+  cmd.AddValue("qMaxPkts",   "Queue size (packets)", qMaxPkts);
+  cmd.AddValue("packetSize", "UDP payload (bytes)", packetSize);
+  cmd.AddValue("interval",   "Client interval (s)", intervalSec);
+  cmd.AddValue("failDownAt", "Link 0-1 DOWN time (s)", failDownAt);
+  cmd.AddValue("failUpAt",   "Link 0-1 UP time (s)",   failUpAt);
+  cmd.Parse(argc, argv);
+
+  // nodes + OLSR
+  NodeContainer nodes; nodes.Create(5);
+  OlsrHelper olsr;
+  Ipv4ListRoutingHelper list; list.Add(olsr, 10);
+  InternetStackHelper stack; stack.SetRoutingHelper(list);
+  stack.Install(nodes);
+
+  // ring links
+  PointToPointHelper p2p;
+  p2p.SetDeviceAttribute("DataRate", StringValue(linkRate));
+  p2p.SetChannelAttribute("Delay",   StringValue(delayStr));
+  p2p.SetQueue("ns3::DropTailQueue<Packet>", "MaxSize",
+               StringValue(std::to_string(qMaxPkts) + "p"));
+
+  NetDeviceContainer d01 = p2p.Install(nodes.Get(0), nodes.Get(1));
+  NetDeviceContainer d12 = p2p.Install(nodes.Get(1), nodes.Get(2));
+  NetDeviceContainer d23 = p2p.Install(nodes.Get(2), nodes.Get(3));
+  NetDeviceContainer d34 = p2p.Install(nodes.Get(3), nodes.Get(4));
+  NetDeviceContainer d40 = p2p.Install(nodes.Get(4), nodes.Get(0));
+
+  // IPv4 addresses
+  Ipv4AddressHelper address;
+  address.SetBase("10.1.1.0", "255.255.255.0"); Ipv4InterfaceContainer i01 = address.Assign(d01);
+  address.SetBase("10.1.2.0", "255.255.255.0"); Ipv4InterfaceContainer i12 = address.Assign(d12);
+  address.SetBase("10.1.3.0", "255.255.255.0"); Ipv4InterfaceContainer i23 = address.Assign(d23);
+  address.SetBase("10.1.4.0", "255.255.255.0"); Ipv4InterfaceContainer i34 = address.Assign(d34);
+  address.SetBase("10.1.5.0", "255.255.255.0"); Ipv4InterfaceContainer i40 = address.Assign(d40);
+
+  // UDP echo apps: server on node 2, client on node 0
+  int port = 9;
+  UdpEchoServerHelper echoServer((int)port);
+  ApplicationContainer server = echoServer.Install(nodes.Get(2));
+  server.Start(Seconds(0.5));
+  server.Stop (Seconds(12.0));
+
+  Ipv4Address dst = i12.GetAddress(1);
+  UdpEchoClientHelper echoClient(dst, (int)port);
+  echoClient.SetAttribute("MaxPackets", UintegerValue(0));
+  echoClient.SetAttribute("Interval",   TimeValue(Seconds(intervalSec)));
+  echoClient.SetAttribute("PacketSize", UintegerValue((int)packetSize));
+  ApplicationContainer client = echoClient.Install(nodes.Get(0));
+  client.Start(Seconds(1.0));
+  client.Stop (Seconds(12.0));
+
+  // link 0-1 failure
+  Ptr<Ipv4> ip0 = nodes.Get(0)->GetObject<Ipv4>();
+  Ptr<Ipv4> ip1 = nodes.Get(1)->GetObject<Ipv4>();
+  int if0 = ip0->GetInterfaceForDevice(d01.Get(0));
+  int if1 = ip1->GetInterfaceForDevice(d01.Get(1));
+  if (if0 != -1 && if1 != -1)
+  {
+    Simulator::Schedule(Seconds(failDownAt), &Ipv4::SetDown, ip0, if0);
+    Simulator::Schedule(Seconds(failDownAt), &Ipv4::SetDown, ip1, if1);
+    Simulator::Schedule(Seconds(failUpAt),   &Ipv4::SetUp,   ip0, if0);
+    Simulator::Schedule(Seconds(failUpAt),   &Ipv4::SetUp,   ip1, if1);
+  }
+
+  // flow monitor
+  FlowMonitorHelper flowmon;
+  Ptr<FlowMonitor> monitor = flowmon.InstallAll();
+
+  // snapshots
+  double tPre  = std::max(1.0, failDownAt - 0.2);
+  double tMid  = failDownAt + 0.4;
+  double tPost = failUpAt   + 0.4;
+  Simulator::Schedule(Seconds(tPre),  [monitor, tPre](){  Snapshot(monitor, "pre-failure",   tPre);  });
+  Simulator::Schedule(Seconds(tMid),  [monitor, tMid](){  Snapshot(monitor, "during-failure", tMid); });
+  Simulator::Schedule(Seconds(tPost), [monitor, tPost](){ Snapshot(monitor, "post-recovery",  tPost); });
+
+  // run
+  Simulator::Stop(Seconds(12.0));
+  Simulator::Run();
+  Snapshot(monitor, "final", 12.0);
+  Simulator::Destroy();
+  return 0;
+}
