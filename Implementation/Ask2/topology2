@@ -62,7 +62,7 @@ static void ReportFM()
 
 int main (int argc, char *argv[])
 {
-  // ====== Παράμετροι μέσω CommandLine ======
+  //  Παράμετροι μέσω CommandLine
   std::string delay = "2ms";
   double failDownAt = 2.0;
   double failUpAt   = 3.0;
@@ -90,7 +90,7 @@ int main (int argc, char *argv[])
   // ενημέρωση global διαστήματος
   g_fmInterval = fmReportEvery;
 
-  // ====== Κόμβοι & δυναμική δρομολόγηση (OLSR) ======
+  // Κόμβοι & δυναμική δρομολόγηση 
   NodeContainer nodes; nodes.Create(5); // 0..4
 
   OlsrHelper olsr;
@@ -101,7 +101,7 @@ int main (int argc, char *argv[])
   stack.SetRoutingHelper(list);  // ορισμός OLSR πριν το Install
   stack.Install(nodes);
 
-  // ====== Συνδέσεις ======
+  //  Συνδέσεις
   PointToPointHelper p2p;
   p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
   p2p.SetChannelAttribute("Delay",   StringValue(delay));
@@ -112,7 +112,7 @@ int main (int argc, char *argv[])
   NetDeviceContainer d34 = p2p.Install(NodeContainer(nodes.Get(3), nodes.Get(4)));
   NetDeviceContainer d42 = p2p.Install(NodeContainer(nodes.Get(4), nodes.Get(2)));
 
-  // ====== IP διευθύνσεις ======
+  // IP διευθύνσεις
   Ipv4AddressHelper address;
   address.SetBase("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer i01 = address.Assign(d01);
@@ -125,7 +125,7 @@ int main (int argc, char *argv[])
   address.SetBase("10.1.5.0", "255.255.255.0");
   Ipv4InterfaceContainer i42 = address.Assign(d42);
 
-  // ====== Sinks στους κόμβους 2 & 3 ======
+  // Sinks στους κόμβους 2 & 3 
   uint16_t portSink02 = 5000, portSink03 = 5001;
 
   PacketSinkHelper sinkHelper02("ns3::UdpSocketFactory",
@@ -137,7 +137,7 @@ int main (int argc, char *argv[])
   sinkApps02.Start(Seconds(0.0)); sinkApps02.Stop(Seconds(10.0));
   sinkApps03.Start(Seconds(0.0)); sinkApps03.Stop(Seconds(10.0));
 
-  // ====== CBR generators (OnOff) από κόμβο 0 ======
+  // CBR generators (OnOff) από κόμβο 0 
   // 0 -> 2 (προς τη διεύθυνση του κόμβου 2 στη ζεύξη 1-2)
   OnOffHelper onoff02("ns3::UdpSocketFactory",
                       InetSocketAddress(i12.GetAddress(1), portSink02));
@@ -158,7 +158,7 @@ int main (int argc, char *argv[])
   ApplicationContainer cbr03 = onoff03.Install(nodes.Get(0));
   cbr03.Start(Seconds(cbr03Start)); cbr03.Stop(Seconds(10.0));
 
-  // ====== Link failure (0–1) ======
+  // Link failure (0–1) 
   Ptr<NetDevice> dev0 = d01.Get(0);
   Ptr<NetDevice> dev1 = d01.Get(1);
   Ptr<Ipv4> ipv4Node0 = nodes.Get(0)->GetObject<Ipv4>();
@@ -176,18 +176,18 @@ int main (int argc, char *argv[])
     std::cerr << "ERROR: interface index not found for Node0/Node1\n";
   }
 
-  // ====== FlowMonitor & περιοδική αναφορά ======
+  // FlowMonitor & περιοδική αναφορά 
   FlowMonitorHelper flowmon;
   g_monitor = flowmon.InstallAll();
 
   // ξεκίνα λίγο μετά την πρώτη εκκίνηση CBR
   Simulator::Schedule(Seconds(std::min(cbr02Start, cbr03Start) + 0.2), &ReportFM);
 
-  // ====== Run ======
+  //  Run 
   Simulator::Stop(Seconds(10.0));
   Simulator::Run();
 
-  // ====== Τελική σύνοψη ======
+  // Τελική σύνοψη
   g_monitor->CheckForLostPackets();
   const auto &finalStats = g_monitor->GetFlowStats();
   int TX=0, RX=0, LOST=0;
