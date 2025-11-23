@@ -8,3 +8,17 @@ This project focuses on network simulation using the NS-3 discrete-event network
 
     Part 2: Constructs a more complex multi-node network topology to investigate dynamic routing, 
     packet flow management, and the impact of link failures on packet loss and network performance.
+
+Setup and Execution
+
+1)Move up two directories
+cd ../..
+
+2)Copy the first example script
+cp examples/tutorial/mypoint.cc scratch/mypoint
+
+3)Build your example
+./ns3 build
+
+4)Run the 1st query with parameters
+./ns3 run scratch/five-node-topology -- --failDownAt=6.0 --failUpAt=8.0
