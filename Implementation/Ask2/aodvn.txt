@@ -1,0 +1,243 @@
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/point-to-point-module.h"
+#include "ns3/applications-module.h"
+#include "ns3/flow-monitor-module.h"
+#include "ns3/aodv-helper.h"              // ★ replaced OLSR include
+#include <iostream>
+#include <iomanip>
+#include <algorithm>
+#include <cstdint>
+
+using namespace ns3;
+
+// ===================== GLOBALS =====================
+static Ptr<FlowMonitor> g_monitor;
+static double g_fmInterval = 0.5;
+
+struct Acc { int tx=0, rx=0, lost=0, rxBytes=0; double delay=0; double t=0; };
+static Acc g_last;
+
+// For timing first received packets
+static double firstRxTimeSink02 = -1.0;
+static double firstRxTimeSink03 = -1.0;
+
+// ===================== CALLBACKS =====================
+static void RxTraceSink02(Ptr<const Packet> p, const Address &addr)
+{
+  if (firstRxTimeSink02 < 0.0)
+    firstRxTimeSink02 = Simulator::Now().GetSeconds();
+}
+static void RxTraceSink03(Ptr<const Packet> p, const Address &addr)
+{
+  if (firstRxTimeSink03 < 0.0)
+    firstRxTimeSink03 = Simulator::Now().GetSeconds();
+}
+
+// ===================== FLOWMON REPORT =====================
+static void ReportFM()
+{
+  g_monitor->CheckForLostPackets();
+  const auto &stats = g_monitor->GetFlowStats();
+
+  int tx=0, rx=0, lost=0, rxB=0; double dsum=0;
+  for (const auto &kv : stats)
+  {
+    const auto &s = kv.second;
+    tx   += s.txPackets;
+    rx   += s.rxPackets;
+    lost += s.lostPackets;
+    rxB  += s.rxBytes;
+    dsum += s.delaySum.GetSeconds();
+  }
+
+  double now = Simulator::Now().GetSeconds();
+  double dt  = std::max(1e-9, now - g_last.t);
+
+  int dTx  = tx   - g_last.tx;
+  int dRx  = rx   - g_last.rx;
+  int dLo  = lost - g_last.lost;
+  int dRxB = rxB  - g_last.rxBytes;
+  double dDel = dsum - g_last.delay;
+
+  double thrMbps = (dRxB * 8.0) / (dt * 1e6);
+  double lossPct = (dTx > 0) ? (100.0 * dLo / (double)dTx) : 0.0;
+  double avgMs   = (dRx > 0) ? (dDel / (double)dRx) * 1000.0 : 0.0;
+
+  std::cout.setf(std::ios::fixed);
+  std::cout.precision(3);
+  std::cout << now << "s [FlowMonitor]\n"
+            << "  Διάστημα: Tx=" << dTx << ", Rx=" << dRx
+            << ", Lost=" << dLo
+            << "  |  Loss%=" << lossPct
+            << "  |  Thr=" << thrMbps << " Mbps"
+            << "  |  AvgDelay=" << avgMs << " ms\n";
+
+  g_last = {tx, rx, lost, rxB, dsum, now};
+  Simulator::Schedule(Seconds(g_fmInterval), &ReportFM);
+}
+
+// ===================== MAIN =====================
+int main(int argc, char *argv[])
+{
+  // === Parameters ===
+  std::string delay = "2ms";
+  double failDownAt = 6.0;
+  double failUpAt   = 8.0;
+  bool useWarmup    = true;
+
+  double cbr02Start = 1.2;
+  double cbr03Start = 1.5;
+  std::string cbr02Rate = "12Mbps";
+  std::string cbr03Rate = "8Mbps";
+  int cbrPktSize = 512;
+  double fmReportEvery = 0.5;
+
+  CommandLine cmd;
+  cmd.AddValue("delay", "Link delay", delay);
+  cmd.AddValue("failDownAt", "Time (s) link 0-1 goes DOWN", failDownAt);
+  cmd.AddValue("failUpAt",   "Time (s) link 0-1 goes UP",   failUpAt);
+  cmd.AddValue("useWarmup",  "Enable warm-up phase", useWarmup);
+  cmd.AddValue("cbr02Start", "Start time for flow 0->2", cbr02Start);
+  cmd.AddValue("cbr03Start", "Start time for flow 0->3", cbr03Start);
+  cmd.Parse(argc, argv);
+
+  g_fmInterval = fmReportEvery;
+
+  // === Topology ===
+  NodeContainer nodes;
+  nodes.Create(5); // 0..4
+
+  // ★ AODV instead of OLSR
+  AodvHelper aodv;
+  InternetStackHelper stack;
+  stack.SetRoutingHelper(aodv);
+  stack.Install(nodes);
+
+  // === Point-to-point links ===
+  PointToPointHelper p2p;
+  p2p.SetDeviceAttribute("DataRate", StringValue("10Mbps"));
+  p2p.SetChannelAttribute("Delay",   StringValue(delay));
+
+  NetDeviceContainer d01 = p2p.Install(NodeContainer(nodes.Get(0), nodes.Get(1)));
+  NetDeviceContainer d12 = p2p.Install(NodeContainer(nodes.Get(1), nodes.Get(2)));
+  NetDeviceContainer d03 = p2p.Install(NodeContainer(nodes.Get(0), nodes.Get(3)));
+  NetDeviceContainer d34 = p2p.Install(NodeContainer(nodes.Get(3), nodes.Get(4)));
+  NetDeviceContainer d42 = p2p.Install(NodeContainer(nodes.Get(4), nodes.Get(2)));
+
+  // === IP addresses ===
+  Ipv4AddressHelper address;
+  address.SetBase("10.1.1.0", "255.255.255.0"); auto i01 = address.Assign(d01);
+  address.SetBase("10.1.2.0", "255.255.255.0"); auto i12 = address.Assign(d12);
+  address.SetBase("10.1.3.0", "255.255.255.0"); auto i03 = address.Assign(d03);
+  address.SetBase("10.1.4.0", "255.255.255.0"); auto i34 = address.Assign(d34);
+  address.SetBase("10.1.5.0", "255.255.255.0"); auto i42 = address.Assign(d42);
+
+  // === Sinks ===
+  uint16_t portSink02 = 5000, portSink03 = 5001;
+  PacketSinkHelper sinkHelper02("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portSink02));
+  PacketSinkHelper sinkHelper03("ns3::UdpSocketFactory", InetSocketAddress(Ipv4Address::GetAny(), portSink03));
+
+  ApplicationContainer sinkApps02 = sinkHelper02.Install(nodes.Get(2));
+  ApplicationContainer sinkApps03 = sinkHelper03.Install(nodes.Get(3));
+  sinkApps02.Start(Seconds(0.0)); sinkApps02.Stop(Seconds(10.0));
+  sinkApps03.Start(Seconds(0.0)); sinkApps03.Stop(Seconds(10.0));
+
+  // === Trace packet receptions ===
+  sinkApps02.Get(0)->TraceConnectWithoutContext("Rx", MakeCallback(&RxTraceSink02));
+  sinkApps03.Get(0)->TraceConnectWithoutContext("Rx", MakeCallback(&RxTraceSink03));
+
+  // === Warm-up Phase ===
+  if (useWarmup)
+  {
+    std::cout << ">>> Warm-up phase ENABLED\n";
+    OnOffHelper warm02("ns3::UdpSocketFactory", InetSocketAddress(i12.GetAddress(1), portSink02));
+    warm02.SetAttribute("DataRate", StringValue("100kbps"));
+    warm02.SetAttribute("PacketSize", UintegerValue(64));
+    warm02.SetAttribute("OnTime",  StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    warm02.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    auto warmApp02 = warm02.Install(nodes.Get(0));
+    warmApp02.Start(Seconds(0.1)); warmApp02.Stop(Seconds(0.5));
+
+    OnOffHelper warm03("ns3::UdpSocketFactory", InetSocketAddress(i03.GetAddress(1), portSink03));
+    warm03.SetAttribute("DataRate", StringValue("100kbps"));
+    warm03.SetAttribute("PacketSize", UintegerValue(64));
+    warm03.SetAttribute("OnTime",  StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+    warm03.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+    auto warmApp03 = warm03.Install(nodes.Get(0));
+    warmApp03.Start(Seconds(0.2)); warmApp03.Stop(Seconds(0.6));
+  }
+  else
+  {
+    std::cout << ">>> Warm-up phase DISABLED\n";
+  }
+
+  // === Main CBR Flows ===
+  OnOffHelper onoff02("ns3::UdpSocketFactory", InetSocketAddress(i12.GetAddress(1), portSink02));
+  onoff02.SetAttribute("DataRate", StringValue(cbr02Rate));
+  onoff02.SetAttribute("PacketSize", UintegerValue(cbrPktSize));
+  onoff02.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+  onoff02.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+  auto cbr02 = onoff02.Install(nodes.Get(0));
+  cbr02.Start(Seconds(cbr02Start)); cbr02.Stop(Seconds(10.0));
+
+  OnOffHelper onoff03("ns3::UdpSocketFactory", InetSocketAddress(i03.GetAddress(1), portSink03));
+  onoff03.SetAttribute("DataRate", StringValue(cbr03Rate));
+  onoff03.SetAttribute("PacketSize", UintegerValue(cbrPktSize));
+  onoff03.SetAttribute("OnTime", StringValue("ns3::ConstantRandomVariable[Constant=1]"));
+  onoff03.SetAttribute("OffTime", StringValue("ns3::ConstantRandomVariable[Constant=0]"));
+  auto cbr03 = onoff03.Install(nodes.Get(0));
+  cbr03.Start(Seconds(cbr03Start)); cbr03.Stop(Seconds(10.0));
+
+  // === Link Failure (0–1) ===
+  Ptr<NetDevice> dev0 = d01.Get(0);
+  Ptr<NetDevice> dev1 = d01.Get(1);
+  Ptr<Ipv4> ipv4Node0 = nodes.Get(0)->GetObject<Ipv4>();
+  Ptr<Ipv4> ipv4Node1 = nodes.Get(1)->GetObject<Ipv4>();
+  int ifIndex0 = ipv4Node0->GetInterfaceForDevice(dev0);
+  int ifIndex1 = ipv4Node1->GetInterfaceForDevice(dev1);
+  if (ifIndex0 != -1 && ifIndex1 != -1)
+  {
+    Simulator::Schedule(Seconds(failDownAt), &Ipv4::SetDown, ipv4Node0, ifIndex0);
+    Simulator::Schedule(Seconds(failDownAt), &Ipv4::SetDown, ipv4Node1, ifIndex1);
+    Simulator::Schedule(Seconds(failUpAt),   &Ipv4::SetUp,   ipv4Node0, ifIndex0);
+    Simulator::Schedule(Seconds(failUpAt),   &Ipv4::SetUp,   ipv4Node1, ifIndex1);
+  }
+
+  // === FlowMonitor Setup ===
+  FlowMonitorHelper flowmon;
+  g_monitor = flowmon.InstallAll();
+  Simulator::Schedule(Seconds(std::min(cbr02Start, cbr03Start) + 0.2), &ReportFM);
+
+  // === Run Simulation ===
+  Simulator::Stop(Seconds(10.0));
+  Simulator::Run();
+
+  // === Final Summary ===
+  std::cout << "\n==== ΤΕΛΙΚΗ ΣΥΝΟΨΗ ====\n";
+  std::cout << "First packet received at Sink 02: ";
+  if (firstRxTimeSink02 >= 0.0) std::cout << firstRxTimeSink02 << " s\n";
+  else std::cout << "(no packets)\n";
+  std::cout << "First packet received at Sink 03: ";
+  if (firstRxTimeSink03 >= 0.0) std::cout << firstRxTimeSink03 << " s\n";
+  else std::cout << "(no packets)\n";
+
+  g_monitor->CheckForLostPackets();
+  const auto &finalStats = g_monitor->GetFlowStats();
+  int TX=0, RX=0, LOST=0;
+  for (const auto &kv : finalStats)
+  {
+    TX += kv.second.txPackets;
+    RX += kv.second.rxPackets;
+    LOST += kv.second.lostPackets;
+  }
+  double totalLossPct = (TX > 0) ? (100.0 * LOST / (double)TX) : 0.0;
+  std::cout << "Συνολικά Μεταδοθέντα: " << TX << "\n";
+  std::cout << "Συνολικά Ληφθέντα:    " << RX << "\n";
+  std::cout << "Συνολικά Απωλεσθέντα: " << LOST << "\n";
+  std::cout << "Συνολικό Loss%:       " << totalLossPct << " %\n";
+
+  Simulator::Destroy();
+  return 0;
+}
