@@ -21,4 +21,4 @@ cp examples/tutorial/mypoint.cc scratch/mypoint
 
 4)Run the 1st query with parameters
 
-./ns3 run scratch/five-node-topology -- --failDownAt=6.0 --failUpAt=8.0
+./ns3 run scratch/mypoint -- --failDownAt=6.0 --failUpAt=8.0
