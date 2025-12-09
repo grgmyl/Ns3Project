@@ -126,12 +126,10 @@
 Η λύση του πρώτου ερωτήματος υλοποιήθηκε στον φάκελο \en{scratch} του \en{NS-3}, 
 με χρήση των \en{modules} \en{point-to-point-module.h} και \en{flow-monitor-module.h}. Ως παραδοχές για το συγκεκριμένο ερώτημα αποφασίστηκε ότι, οι παράμετροι της σύνδεσης ήταν:
 
-\begin{itemize}
-    \item \textbf{\en{Data Rate}}: 5 \en{Mbps}
-    \item \textbf{\en{Delay}}: 6 \en{ms}
-    \item \textbf{\en{Packet Size}}: 1024 \en{bytes}
-    \item \textbf{\en{MaxPackets}}: 6
-    \item \textbf{\en{Simulation Time}}: 11 \en{s}
+\begin{itemize}\item \textbf{\en{Data Rate}}: 5 \en{Mbps} (Ρυθμός μετάδοσης δεδομένων).
+    \item \textbf{\en{Delay}}: 6 \en{ms} (Καθυστέρηση διάδοσης στο μέσο).
+    \item \textbf{\en{Packet Size}}: 1024 \en{bytes} (Μέγεθος πακέτου \en{UDP}).
+    \item \textbf{\en{Simulation Time}}: 11 \en{s} (Συνολική διάρκεια προσομοίωσης).
 \end{itemize}
 
 Δημιουργήθηκαν δύο \en{UDP echo servers} στον κόμβο 1 (σε διαφορετικές θύρες) 
@@ -213,8 +211,8 @@
 Για την καλύτερη κατανόηση των παραμέτρων του δικτύου αλλά και της σημασίας τους, δημιουργήθηκαν κάποια σενάρια χρήσης:
 
 \begin{itemize}
-    \item \textbf{Σενάριο 1:} \en{rate} = 5 \en{Mbps}, \en{delay} = 50 \en{ms}, \en{qMaxPkts} = 15, \en{packetSize} = 1200 \en{bytes}, \en{interval} = 0.004 \en{s}, \en{failDownAt} = 6.0 \en{s}, \en{failUpAt} = 8.0 \en{s}.
-    \item \textbf{Σενάριο 2:} \en{rate} = 3 \en{Mbps}, \en{delay} = 30 \en{ms}, \en{qMaxPkts} = 15, \en{packetSize} = 1200 \en{bytes}, \en{interval} = 0.001 \en{s}, \en{failDownAt} = 6.0 \en{s}, \en{failUpAt} = 8.0 \en{s}.
+    \item \textbf{Σενάριο 1:} \underline{\en{rate} = 5 \en{Mbps}, \en{delay} = 50 }\en{ms}, \en{qMaxPkts} = 15, \en{packetSize} = 1200 \en{bytes}, \en{interval} = 0.004 \en{s}, \en{failDownAt} = 6.0 \en{s}, \en{failUpAt} = 8.0 \en{s}.
+    \item \textbf{Σενάριο 2:} \underline{\en{rate} = 3 \en{Mbps}, \en{delay} = 30 }\en{ms}, \en{qMaxPkts} = 15, \en{packetSize} = 1200 \en{bytes}, \en{interval} = 0.001 \en{s}, \en{failDownAt} = 6.0 \en{s}, \en{failUpAt} = 8.0 \en{s}.
 \end{itemize}
 
 \begin{figure}[H]
