@@ -1,0 +1,411 @@
+\documentclass[12pt,a4paper]{report}
+
+% --- PACKAGES ---
+\usepackage{subcaption}
+\usepackage{xurl} 
+\usepackage[greek,english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{geometry}
+
+% Margins
+\geometry{margin=1in}
+
+% Line spacing (Makes the text more readable/professional)
+\linespread{1.15}
+
+% Load hyperref LAST to avoid link bugs
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=magenta,      
+    urlcolor=blue,
+    pdftitle={NS-3 Network Simulation Report},
+}
+
+% --- CUSTOM COMMANDS ---
+\newcommand{\en}[1]{\foreignlanguage{english}{#1}}
+
+\begin{document}
+\selectlanguage{greek}
+
+% --- TITLE PAGE ---
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    \Large
+    \textbf{ΒΑΣΙΚΕΣ ΑΡΧΕΣ ΔΙΚΤΥΩΝ ΚΙΝΗΤΩΝ ΕΠΙΚΟΙΝΩΝΙΩΝ}
+    
+    \vspace{1.5cm}
+    
+    \huge
+    Αναφορά εργασίας: \\
+    Προσομοίωση Δικτύου με \en{NS-3}
+    
+    \vspace{2cm}
+    
+    \Large
+    \textbf{Συγγραφείς:} \\
+    \vspace{0.5cm}
+    Κωνσταντίνος Γκύλλης (ΑΜ:1100526) \\
+    Γεωργία Μυλωνά (ΑΜ:1104783)
+    
+    \vspace{3cm}
+    
+    \large
+    Δεκέμβριος 2025
+    
+    \vfill
+\end{titlepage}
+
+% --- FRONT MATTER ---
+
+\chapter*{Ευχαριστίες}
+Θα θέλαμε να ευχαριστήσουμε την επιβλέπουσα κ. Ζωή Πάνου για την ανάθεση της εργασίας, 
+την καθοδήγηση και τις χρήσιμες παρατηρήσεις της κατά τη διάρκεια της εκπόνησης.
+
+\begin{abstract}
+Στην παρούσα εργασία μελετάται η προσομοίωση τοπολογίας με τη χρήση του εργαλείου \en{NS-3}.
+Η εργασία χωρίζεται σε δύο κύρια μέρη: (1) προσομοίωση μιας απλής σύνδεσης σημείου-προς-σημείο μεταξύ δύο κόμβων με χρήση της τεχνικής \en{UDP echo}, και (2) προσομοίωση ενός πιο σύνθετου δικτύου 5 κόμβων, με δυναμική δρομολόγηση, δημιουργία ροών πακέτων και εισαγωγή αποτυχιών συνδέσεων.
+Πραγματοποιήθηκε η ανάλυση της απόδοσης με δείκτες όπως η απώλεια πακέτων, η καθυστέρηση και το \en{throughput}.
+Χρησιμοποιήθηκαν τα πρωτόκολλα δρομολόγησης \en{OLSR} και \en{AODV}, ενώ αξιοποιήθηκε το \en{FlowMonitor} του \en{NS-3} για την καταγραφή των στατιστικών.
+Τα αποτελέσματα δείχνουν πως οι παράμετροι του δικτύου (ρυθμός αποστολής, μέγεθος ουράς, \en{delay} συνδέσεων) επηρεάζουν σημαντικά τη συμπεριφορά της κάθε τοπολογίας, κάτι που θα αναλυθεί στην συνέχεια. Τέλος, το \en{OLSR} παρουσιάζει μια πιο προβλέψιμη συμπεριφορά σε σχέση με το \en{AODV}, ιδιαίτερα σε σενάρια με αποτυχίες συνδέσεων και αλλαγές στη δρομολόγηση.
+\end{abstract}
+    
+
+\tableofcontents
+\listoffigures
+
+% --- MAIN CONTENT ---
+
+\chapter{Εισαγωγή}
+
+Η προσομοίωση δικτύων αποτελεί ένα ιδιαίτερα χρήσιμο εργαλείο για την κατανόηση της συμπεριφοράς πρωτοκόλλων, 
+τοπολογιών και μηχανισμών δρομολόγησης χωρίς την ανάγκη φυσικής υλοποίησης. 
+Στο πλαίσιο της εργασίας αυτής ζητήθηκε η υλοποίηση δύο σεναρίων προσομοίωσης με τη χρήση του εξομοιωτή \en{NS-3}: 
+
+\begin{itemize}
+    \item Στην πρώτη περίπτωση, υλοποιήθηκε μια απλή σύνδεση σημείου-προς-σημείο \en{(point-to-point)} μεταξύ δύο κόμβων με \en{UDP echo}.
+    \item Στην συνέχεια της εργασίας (2ο μέρος) πραγματοποιήθηκε μια πιο σύνθετη τοπολογία 5 κόμβων με δυναμική δρομολόγηση, αποτυχίες συνδέσεων και ανάλυση απώλειας πακέτων.
+\end{itemize}
+
+Η εργασία είχε σαν στόχο πρώτον και κυριότερο την εξοικείωση με το περιβάλλον του \en{NS-3}. Στη συνέχεια, την κατανόηση βασικών εννοιών όπως ροές πακέτων (\en{flows}), \en{dynamic routing, link failures, packet loss}. Τέλος, την ανάλυση της επίδρασης των παραμέτρων του δικτύου στην συνολική απόδοση της κάθε τοπολογίας ξεχωριστά.
+
+
+\chapter{Μεθοδολογία}
+
+\section{Εργαλεία και Περιβάλλον}
+
+Για την υλοποίηση της εργασίας χρησιμοποιήθηκαν τα εξής: 
+
+\begin{itemize}
+    \item \en{VMware Workstation Pro} με το λειτουργικό σύστημα \en{Ubuntu Linux}.
+    \item \en{NS-3} με χρήση της γλώσσας προγραμματισμού \en{C++}.
+    \item \en{GitHub} για συνεργασία και συγχρονισμό κώδικα.
+    \item \en{Discord} για επικοινωνία μεταξύ των μελών.
+    \item \en{Draw.io} για την υλοποίηση σχεδιαγραμμάτων και την απεικόνιση της τοπολογίας.
+\end{itemize}
+
+\section{Περιγραφή Σεναρίων}
+
+Σύμφωνα με την εκφώνηση της εργασίας:
+
+\begin{enumerate}
+    \item \textbf{Ερώτημα 1:} Σύνδεση 2 κόμβων με \en{point-to-point link}, χρήση δύο \en{UDP echo servers} στον κόμβο 1 και δύο \en{UDP echo clients} στον κόμβο 0. Καταγραφή ροών με \en{FlowMonitor}.
+    \item \textbf{Ερώτημα 2:} Τοπολογία 5 κόμβων με δυναμική δρομολόγηση \en{(OLSR, AODV)}, δημιουργία \en{CBR flows}, εισαγωγή αποτυχίας \en{links} και καταγραφή απώλειας πακέτων σε τακτά χρονικά διαστήματα.
+\end{enumerate}
+
+\chapter{Η υλοποίηση της εργασίας}
+
+\section{Ερώτημα 1: \en{Point-to-Point UDP Echo}}
+
+Η λύση του πρώτου ερωτήματος υλοποιήθηκε στον φάκελο \en{scratch} του \en{NS-3}, 
+με χρήση των \en{modules} \en{point-to-point-module.h} και \en{flow-monitor-module.h}. Ως παραδοχές για το συγκεκριμένο ερώτημα αποφασίστηκε ότι, οι παράμετροι της σύνδεσης ήταν:
+
+\begin{itemize}
+    \item \textbf{\en{Data Rate}}: 5 \en{Mbps}
+    \item \textbf{\en{Delay}}: 6 \en{ms}
+    \item \textbf{\en{Packet Size}}: 1024 \en{bytes}
+    \item \textbf{\en{MaxPackets}}: 6
+    \item \textbf{\en{Simulation Time}}: 11 \en{s}
+\end{itemize}
+
+Δημιουργήθηκαν δύο \en{UDP echo servers} στον κόμβο 1 (σε διαφορετικές θύρες) 
+και δύο \en{UDP echo clients} στον κόμβο 0, οι οποίοι στέλνουν πακέτα προς τους αντίστοιχους \en{servers}, 
+ενώ το \en{FlowMonitor} καταγράφει τα δεδομένα ροής (πακέτα, καθυστέρηση, εύρος ζώνης).
+
+\subsection*{Διάγραμμα Ροών}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{flows-question1.png}
+    \caption{Ενδεικτική απεικόνιση των 4 ροών (\en{flows}) μεταξύ \en{client}\en{ (Node 0) }και \en{server}\en{ (Node 1)} στο Ερώτημα 1.}
+    \label{fig:flows-q1}
+\end{figure}
+
+\section{Ερώτημα 2: Τοπολογία 5 Κόμβων με Δυναμική Δρομολόγηση}
+
+Η τοπολογία 5 κόμβων που υλοποιήθηκε είναι η εξής: 
+
+\begin{itemize}
+    \item Κόμβος 0 με Κόμβο 1
+    \item Κόμβος 1 με Κόμβο 2
+    \item Κόμβος 0 με Κόμβο 3
+    \item Κόμβος 3 με Κόμβο 4
+    \item Κόμβος 4 με Κόμβο 2
+\end{itemize}
+
+\subsection*{Διάγραμμα Τοπολογίας}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{topology-5nodes.png}
+    \caption{Τοπολογία 5 κόμβων για το Ερώτημα 2.}
+    \label{fig:topology-5nodes}
+\end{figure}
+
+Εγκαταστάθηκε το \en{internet stack} σε όλους τους κόμβους και ορίστηκαν οι διευθύνσεις \en{IP} που απεικονίζονται στο σχήμα. 
+Για τη δρομολόγηση χρησιμοποιήθηκαν τα πρωτόκολλα \en{OLSR} και \en{AODV}, τα οποία υποστηρίζονται πλήρως από το \en{NS-3}.
+
+Για την παραγωγή κίνησης χρησιμοποιήθηκαν \en{CBR flows}:
+\begin{itemize}
+    \item Από τον Κόμβο 0 προς τον Κόμβο 2.
+    \item Από τον Κόμβο 0 προς τον Κόμβο 3.
+\end{itemize}
+
+Στους κόμβους προορισμού εγκαταστάθηκαν \textit{\en{packetSink}} εφαρμογές.
+
+\subsection{Δεδομένα για το 2ο ερώτημα}
+
+Η χρήση του \textbf{\en{warm-up phase}} κρίθηκε απαραίτητη ώστε να επιτρέπεται στους αλγόριθμους δρομολόγησης να σταθεροποιήσουν τους πίνακες δρομολόγησης πριν την έναρξη των μετρήσεων. Χωρίς αυτή την περίοδο σταθεροποίησης, τα πρώτα δευτερόλεπτα της προσομοίωσης χαρακτηρίζονται από έντονη διακύμανση στα \en{routing decisions}, γεγονός που οδηγεί σε μη αντιπροσωπευτικές τιμές καθυστέρησης και \en{packet loss}.
+Στη συνέχεια, έγινε χρήση επίσης του \textbf{\en{internet stack}}. Το \en{internet stack} παρέχει τα βασικά επίπεδα πρωτοκόλλων δικτύου που επιτρέπουν την επικοινωνία μεταξύ των κόμβων και λειτουργεί ως λογισμικό που υποστηρίζει την αποστολή, λήψη και επεξεργασία πακέτων. Τέλος, τα \textbf{\en{packet sink}} που λαμβάνουν εισερχόμενα πακέτα και χρησιμοποιούνται για τη μέτρηση της δικτυακής κίνησης και της επιτυχούς παράδοσης πακέτων. Σε ότι αφορά τα πρωτόκολλα δρομολόγησης που χρησιμοποιήθηκαν, επιλέχθηκαν 2 πρωτόκολλα, για να γίνει αισθητή η διαφορά με την χρήση του \en{warm-up phase} που περιγράφηκε παραπάνω.
+
+\begin{itemize}
+    \item Το \en{\textbf{OLSR} (Optimized Link State Routing)} είναι \en{proactive} πρωτόκολλο και διατηρεί συνεχώς ενημερωμένα τα \en{routing tables}. Έτσι, η επίδραση του \en{warm-up phase} είναι ανεπαίσθητη.
+    \item Το \en {\textbf{AODV} (Ad hoc On-Demand Distance Vector)} είναι \en{reactive} πρωτόκολλο, που δημιουργεί διαδρομές μόνο όταν χρειάζεται. Το \en{warm-up phase} μειώνει την αρχική καθυστέρηση και οδηγεί σε πιο σταθερά αποτελέσματα.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{olsr-aodv-warmup.png}
+        \subcaption{Χωρίς \en{warm-up}}
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{olsr-aodv-warmupenabled.png}
+        \subcaption{Με \en{warm-up}}
+    \end{minipage}
+
+    \caption{Σχήμα 3.4α: Συγκριτική απεικόνιση \en{OLSR} και \en{AODV} χωρίς και με \en{warm-up phase}.}
+    \label{fig:warmup-olsr-aodv}
+\end{figure}
+\clearpage
+
+\subsection{Παράμετροι Προσομοίωσης}
+
+Για την καλύτερη κατανόηση των παραμέτρων του δικτύου αλλά και της σημασίας τους, δημιουργήθηκαν κάποια σενάρια χρήσης:
+
+\begin{itemize}
+    \item \textbf{Σενάριο 1:} \en{rate} = 5 \en{Mbps}, \en{delay} = 50 \en{ms}, \en{qMaxPkts} = 15, \en{packetSize} = 1200 \en{bytes}, \en{interval} = 0.004 \en{s}, \en{failDownAt} = 6.0 \en{s}, \en{failUpAt} = 8.0 \en{s}.
+    \item \textbf{Σενάριο 2:} \en{rate} = 3 \en{Mbps}, \en{delay} = 30 \en{ms}, \en{qMaxPkts} = 15, \en{packetSize} = 1200 \en{bytes}, \en{interval} = 0.001 \en{s}, \en{failDownAt} = 6.0 \en{s}, \en{failUpAt} = 8.0 \en{s}.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{params-flows.png}
+    \caption{Ενδεικτικός πίνακας με τις παραμέτρους των \en{flows} (ρυθμός, \en{delay}, \en{packet size}, \en{interval}).}
+    \label{fig:params-flows}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{minipage}{0.55\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{enabledaodvn.png}
+        \subcaption{Με ενεργοποιημένο \en{warm-up}} 
+    \end{minipage}
+    \hfill
+    \begin{minipage}{0.55\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{disabledaodvn.png}
+        \subcaption{Με απενεργοποιημένο \en{warm-up}}
+    \end{minipage}
+
+    \caption{Σχήμα 3.4β: Επίδραση του \en{warm-up} στο \en{AODVN.}}
+    \label{fig:warmup-aodvn}
+\end{figure}
+
+\clearpage
+
+\subsection{Χειρισμός \en{Link Failures}}
+
+Σενάρια με διαφορετικό \en{delay} έδειξαν διαφορετική συμπεριφορά ως προς την επαναφορά του \en{link} και την απώλεια πακέτων.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{link-failures-delay.png}
+        \caption{
+            \en{delay} = 1 \en{ms},
+            \en{failDownAt} = 5.0 \en{s},
+            \en{failUpAt} = 9.0 \en{s},
+            \en{useWarmup} = true,\\
+            \en{cbr02Start} = 1.2 \en{s},
+            \en{cbr03Start} = 1.5 \en{s}
+        }
+    \end{subfigure}
+
+    \vspace{1em}
+
+    \begin{subfigure}{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{link-failures-delay2.png}
+        \caption{
+            \en{delay} = 8 \en{ms},
+            \en{failDownAt} = 5.0 \en{s},
+            \en{failUpAt} = 9.0 \en{s},
+            \en{useWarmup} = true,\\
+            \en{cbr02Start} = 1.2 \en{s},
+            \en{cbr03Start} = 1.5 \en{s}
+        }
+    \end{subfigure}
+
+    \caption{
+        Επίδραση διαφορετικού \en{delay}
+        στον χειρισμό των \en{link failures}
+        (1 \en{ms} έναντι 8 \en{ms}).
+    }
+    \label{fig:link-failures}
+\end{figure}
+
+
+\chapter{Αποτελέσματα και Ανάλυση}
+
+\section{Ερώτημα 1}
+
+Από την προσομοίωση της \en{point-to-point} σύνδεσης παρατηρήθηκε ότι:
+
+\begin{itemize}
+    \item Οι 4 ροές (\en{flows}) αντιστοιχούν στις επικοινωνίες μεταξύ των δύο \en{clients} με τους δύο \en{servers}.
+    \item Οι καθυστερήσεις ήταν κοντά στις θεωρητικές τιμές (λόγω μικρού σταθερού \en{delay}) που ορίστηκε ως παραδοχή.
+    \item Το \en{throughput} παρέμεινε σταθερό, χωρίς απώλειες πακέτων, σε όλη την διάρκεια της προσομοίωσης της σύνδεσης \en{point-to-point}.
+\end{itemize}
+
+\section{Ερώτημα 2}
+
+\subsection{Συμπεριφορά πριν, κατά και μετά τις αποτυχίες}
+
+Για παράδειγμα, με \textbf{\en{delay = 5 ms}} και συγκεκριμένα χρονικά σημεία:
+
+\begin{itemize}
+    \item 4.8 \en{s}: \textit{\en{pre-failure}} — πλήρης συνδεσιμότητα.
+    \item 5.4 \en{s}: \textit{\en{during-failure}} — το \en{link} 0–1 είναι κάτω.
+    \item 9.4 \en{s}: \textit{\en{post-recovery}} — το \en{link} έχει επανέλθει.
+    \item 12.0 \en{s}: \textit{\en{final}} — συνολική αποτίμηση της προσομοίωσης.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.6\textwidth]{erotima2a..png}
+    \caption{Χρονική εξέλιξη της προσομοίωσης: \en{pre-failure, during-failure, post-recovery, final}.}
+    \label{fig:failure-timeline}
+\end{figure}
+
+\subsection{Επίδραση Ρυθμού, Ουράς και \en{Interval}}
+
+Από τα αποτελέσματα προκύπτει ότι μικρό \en{interval} 
+(π.χ.\ 0.001 \en{s}) οδηγεί σε υπερφόρτωση του δικτύου, 
+αυξημένες απώλειες και μεγαλύτερο \en{delay}. Στην περίπτωση του μεγαλύτερου \en{interval}, επιτυγχάνει πιο σταθερή ροή, 
+υψηλότερο \en{Packet Delivery Ratio (PDR)} και χαμηλότερο 
+\en{delay}. Παράλληλα, η μεγάλη ουρά (π.χ.\ \en{qMaxPkts} = 15) μειώνει τις απώλειες 
+αλλά αυξάνει το \en{delay}. Αντίθετα, η μικρή ουρά μειώνει 
+το \en{delay} αλλά αυξάνει την πιθανότητα απώλειας 
+πακέτων σε συνθήκες συμφόρησης. Συνολικά, η επιλογή των παραμέτρων πρέπει 
+να γίνεται με βάση τις ανάγκες του χρήστη του εργαλείου, ώστε να επιτυγχάνεται
+ισορροπία μεταξύ απόδοσης, καθυστέρησης και αξιοπιστίας.
+
+\begin{figure}[H]
+    \centering
+    % --- First image ---
+    \begin{subfigure}{0.6\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{erotima2ab.png}
+        \caption{
+            \en{rate} = 3 \en{Mbps},\;
+            \en{delay} = 30 \en{ms},\;
+            \en{qMaxPkts} = 15,\\
+            \en{packetSize} = 1200 \en{bytes},\;
+            \en{interval} = 0.001 \en{s},\\
+            \en{failDownAt} = 6.0 \en{s},\;
+            \en{failUpAt} = 8.0 \en{s}
+        }
+    \end{subfigure}
+
+    \vspace{1em}
+
+
+    % --- Second image ---
+    \begin{subfigure}{0.6\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{erotima2ac..png}
+        \caption{
+            \en{rate} = 5 \en{Mbps},\;
+            \en{delay} = 50 \en{ms},\;
+            \en{qMaxPkts} = 15,\\
+            \en{packetSize} = 1200 \en{bytes},\;
+            \en{interval} = 0.004 \en{s},\\
+            \en{failDownAt} = 6.0 \en{s},\;
+            \en{failUpAt} = 8.0 \en{s}
+        }
+    \end{subfigure}
+
+    \caption{
+        Σχέση μεγέθους ουράς, \en{throughput}
+        και \en{packet loss}.
+    }
+    \label{fig:queue}
+\end{figure}
+
+\chapter{Συμπεράσματα}
+
+Συνολικά, η εργασία αυτή επέτρεψε την εις βάθος μελέτη της λειτουργίας του \en{NS-3} και των δυνατοτήτων του στην προσομοίωση δικτύων. 
+Συνοψίζοντας:
+
+\begin{itemize}
+    \item Υλοποιήθηκε επιτυχώς σύνδεση \en{point-to-point} με \en{UDP echo} και καταγραφή ροών.
+    \item Σχεδιάστηκε και προσομοιώθηκε μια σύνθετη τοπολογία 5 κόμβων με δυναμική δρομολόγηση.
+    \item Μελετήθηκε η επίδραση των παραμέτρων (\en{rate, delay, queue size, interval}) στη συμπεριφορά του δικτύου.
+    \item Αναλύθηκε η λειτουργία των \en{OLSR} και \en{AODV} σε περιπτώσεις αποτυχίας συνδέσεων. Τα δύο πρωτόκολλα που επιλέχθηκαν ήταν αξιόλογα, ωστόσο παρατηρήθηκαν οι εξής διαφορές μεταξύ τους:
+\begin{itemize}
+    \item Το \textbf{\en{OLSR}} εμφανίζεται πιο αξιόπιστο σε συνθήκες \en{link failures}, καθώς επαναφέρει γρήγορα τη συνδεσιμότητα.
+    \item Το \textbf{\en{AODV}} επωφελείται σημαντικά από το \en{warm-up phase}, καθώς έτσι αποφεύγεται η αρχική καθυστέρηση στη δημιουργία διαδρομών.
+\end{itemize}
+\end{itemize}
+
+Η χρήση του \en{NS-3} σε συνδυασμό με εργαλεία όπως το \en{FlowMonitor} αποδεικνύεται ιδιαίτερα χρήσιμη για την ποσοτική ανάλυση της απόδοσης των δικτύων.
+
+\chapter{Βιβλιογραφία}
+
+\begin{description}
+    \item[] \en{NS-3 Documentation and Tutorial.} \\
+    \en{\url{https://www.nsnam.org/documentation/}}
+
+    \item[] \en{NS-3 Tutorial.} \\
+    \en{\url{https://www.nsnam.org/docs/tutorial/html/}}
+
+    \item[] \en{NS-3 Model Library.} \\
+    \en{\url{https://www.nsnam.org/docs/models/html/}}
+
+    \item[] \en{Examples of dynamic routing and failover in NS-3.} \\
+    \en{\url{https://ns3-code.com/how-to-begin-implement-dynamic-routing-in-ns3/}}
+\end{description}
+
+\end{document}
